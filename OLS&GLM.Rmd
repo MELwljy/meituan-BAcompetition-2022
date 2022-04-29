@@ -1,0 +1,330 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+---
+
+
+
+```{r warning=FALSE, include=FALSE}
+library(readxl)
+library(dplyr)
+library(magrittr)
+library(tidyverse)
+library(reshape2)
+library(ggplot2)
+#devtools::install_github("laresbernardo/lares")
+library(lares)
+library(MASS)
+library(vcd)
+library(AER)
+#install.packages('regclass')
+library("regclass")
+```
+
+
+```{r,message=FALSE, warning=FALSE}
+setwd("/Users/ljyw/Desktop/美团/data/3.30")
+all_data<-read_xlsx('dataset_food_drink_cake.xlsx')
+```
+
+去除了province,city,district,name,Female,Male,Education,Beauty,MeituanFlash,MeituanRun,Merchant,delivery_type_bin,category1,trade_area,month_sales_clean_log,lat,lng
+
+```{r}
+#all_data<-filter(all_data,category1=='Foods')
+new_data <-subset(all_data,select=-c(province,city,district,name,Female,Male,lat,lng,category1,Education,Rent,Beauty,trade_area,MeituanFlash,MeituanRun,Merchant,delivery_type_bin,month_sales_clean_log))
+
+#new_data<-na.omit(new_data)
+new_data[is.na(new_data) | new_data == "Inf"] <- NA
+```
+
+Check columns
+```{r include=FALSE}
+print(names(new_data))
+```
+
+set variable into 100% version
+```{r include=FALSE}
+new_data$below_18=new_data$below_18*100
+new_data$f19t24=new_data$f19t24*100
+new_data$f25t34=new_data$f25t34*100
+new_data$f35t44=new_data$f35t44*100
+new_data$f45t54=new_data$f45t54*100
+new_data$above_55=new_data$above_55*100
+new_data$below_50_yuan=new_data$below_50_yuan*100
+new_data$f50t100_yuan=new_data$f50t100_yuan*100
+new_data$f100t300_yuan=new_data$f100t300_yuan*100
+new_data$above_300_yuan=new_data$above_300_yuan*100
+new_data$Shopping=new_data$Shopping*100
+new_data$Catering_Service=new_data$Catering_Service*100
+new_data$Car_Service=new_data$Car_Service*100
+new_data$Leisure=new_data$Leisure*100
+new_data$Other=new_data$Other*100
+new_data$Medicare=new_data$Medicare*100
+```
+
+summary data
+```{r include=FALSE}
+summary(new_data)
+```
+
+Histogram
+Sales data definitely not normal  
+Some high counts, but a lot of low ones 
+```{r}
+# Look at its distribution species  
+new_data %>% 
+  ggplot(aes(x = month_sales_clean)) + 
+  theme_classic() +   
+  geom_histogram(bins = 10,colour = "black",fill = "orange") +   
+  labs(title = "Histogram of Monthly Sales",        
+       x = "Monthly Sales",
+       y = "Count")
+```
+
+Heatmap
+```{r}
+# Get lower triangle of the correlation matrix
+  get_lower_tri<-function(cormat){
+    cormat[upper.tri(cormat)] <- NA
+    return(cormat)
+  }
+# Get upper triangle of the correlation matrix
+  get_upper_tri <- function(cormat){
+    cormat[lower.tri(cormat)]<- NA
+    return(cormat)
+  }
+
+continuous <-select_if(new_data, is.numeric)
+cormat <- round(cor(continuous),2)
+# Melt the correlation matrix
+upper_tri <- get_upper_tri(cormat)
+melted_cormat <- melt(upper_tri, na.rm = TRUE)
+
+# Heatmap
+ggplot(data = melted_cormat, aes(Var2, Var1, fill = value))+
+ geom_tile(color = "white")+
+ scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+   midpoint = 0, limit = c(-1,1), space = "Lab", 
+   name="Pearson\nCorrelation") +
+  theme_minimal()+ 
+ theme(axis.text.x = element_text(angle = 45, vjust = 1, 
+    size = 8, hjust = 1))+
+ coord_fixed()
+```
+
+Ranked Cross-Correlations
+这里可以看到客群年龄分布和餐饮人均消费以及消费场景偏好相关性较强，这可能会导致collinearity的问题
+```{r}
+corr_cross(new_data, # name of dataset
+  max_pvalue = 0.05, # display only significant correlations (at 5% level)
+  top = 20 # display top 10 couples of variables (by correlation coefficient)
+)
+```
+
+
+SIMPLE OLS FULL MODEL
+What happens if we do a normal linear regression?
+```{r}
+ols1=lm(month_sales_clean ~ score+comment_number+avg_price_rmb+delivery_time_clean+delivery_type_1+in_time_delivery_percent+min_price_rmb+shipping_fee_clean+Day_Time+Night_Time+Mid_Night_Time+recommend_Bin+district_population+population_density+below_18+f19t24+f25t34+f35t44+f45t54+above_55+below_50_yuan+f50t100_yuan	+f100t300_yuan+above_300_yuan+Shopping+Catering_Service+Car_Service+Leisure+Other+Medicare,data = new_data)
+summary(ols1)
+knitr::kable(summary(ols1)$coef, digits=3)
+
+#knitr::kable(VIF(ols1),digits=3)
+```
+
+SIMPLE OLS  MODEL 2&3(去掉了年龄分布和餐饮人均消费和catering service)
+```{r}
+#ols2=lm(month_sales_clean ~ score+comment_number+avg_price_rmb+delivery_time_clean+delivery_type_1+in_time_delivery_percent+min_price_rmb+shipping_fee_clean+Day_Time+Night_Time+Mid_Night_Time+recommend_Bin+district_population+Shopping+Catering_Service+Car_Service+Leisure+Other+Medicare,data = new_data)
+#summary(ols2)
+#knitr::kable(summary(ols2)$coef, digits=3)
+#knitr::kable(VIF(ols2),digits=3)
+
+
+#ols3=lm(month_sales_clean ~ score+comment_number+avg_price_rmb+delivery_time_clean+delivery_type_1+in_time_delivery_percent+min_price_rmb+shipping_fee_clean+Day_Time+Night_Time+Mid_Night_Time+recommend_Bin+district_population+Shopping+Car_Service+Leisure+Other+Medicare,data = new_data)
+#summary(ols3)
+#knitr::kable(summary(ols3)$coef, digits=3)
+#knitr::kable(VIF(ols3),digits=3)
+```
+
+
+GLM Model
+Log Link: Log(Y) – Models the logarithm of mean Y. 
+
+Poisson distribution
+The Poisson distribution is widely used for modelling the number of occurrences of an event occurs in an interval of time, distance, or volume. If the events are happening independently and the probability that an event occurs in a given length of time does not change through time, the number of events in a fixed unit of time has a Poisson distribution. Also, we can use the distplot() to check whether the points is Poisson-distributed. From the Poissoness graph, we noticed that the point are followed by 45 degree line which indicate that the response variable followed poisson distribution. So Poisson regression could be one of our choices.
+
+```{r}
+distplot(all_data$month_sales_clean,type="poisson", xlab = "Number of occurrences", ylab = "Distribution parameter",main="Poissoness plot")
+```
+
+
+GLM1-poisson
+```{r}
+# poisson glm
+glm1 = glm(month_sales_clean ~ score+comment_number+avg_price_rmb+delivery_time_clean+delivery_type_1+in_time_delivery_percent+min_price_rmb+shipping_fee_clean+Day_Time+Night_Time+Mid_Night_Time+recommend_Bin+district_population+population_density+below_18+f19t24+f25t34+f35t44+f45t54+above_55+below_50_yuan+f50t100_yuan	+f100t300_yuan+above_300_yuan+Shopping+Catering_Service+Car_Service+Leisure+Other+Medicare, data=new_data,family = poisson(link=log))
+summary(glm1)
+knitr::kable(summary(glm1)$coef, digits=3)
+```
+Test Multicollinearity
+
+The most common way to detect multicollinearity is by using the variance inflation factor (VIF), which measures the correlation and strength of correlation between the predictor variables in a regression model.The value for VIF starts at 1 and has no upper limit. 
+
+- A value of 1 indicates there is no correlation between a given predictor variable and any other predictor variables in the model.
+- A value between 1 and 5 indicates moderate correlation between a given predictor variable and other predictor variables in the model, but this is often not   severe enough to require attention.
+- A value greater than 5 indicates potentially severe correlation between a given predictor variable and other predictor variables in the model. In this case, the coefficient estimates and p-values in the regression output are likely unreliable.
+
+这里和上面correlation heatmap test 的result非常相近，为了减少collinearity的影响增加model的预测性，我们将做第二个glm with subset variables
+```{r}
+knitr::kable(VIF(glm1),digits=3)
+```
+
+GLM2-poisson
+```{r echo=FALSE}
+glm2 = glm(month_sales_clean ~ score+comment_number+avg_price_rmb+delivery_time_clean+delivery_type_1+in_time_delivery_percent+min_price_rmb+shipping_fee_clean+Day_Time+Night_Time+Mid_Night_Time+recommend_Bin+district_population+Shopping+Catering_Service+Car_Service+Leisure+Other+Medicare, data=new_data,family = poisson(link=log))
+summary(glm2)
+knitr::kable(summary(glm2)$coef, digits=3)
+```
+
+检查vif shopping和catering correlation依旧很高 我们选择只使用catering 
+```{r echo=FALSE}
+knitr::kable(VIF(glm2),digits=3)
+```
+
+
+GLM3-poisson
+vif looks good
+```{r echo=FALSE}
+glm3 = glm(month_sales_clean ~ score+comment_number+avg_price_rmb+delivery_time_clean+delivery_type_1+in_time_delivery_percent+min_price_rmb+shipping_fee_clean+Day_Time+Night_Time+Mid_Night_Time+recommend_Bin+district_population+Catering_Service+Car_Service+Leisure+Other+Medicare, data=new_data,family = poisson(link=log))
+summary(glm3)
+knitr::kable(summary(glm3)$coef, digits=4)
+
+knitr::kable(VIF(glm3),digits=3) 
+```
+
+MEAN-VARIANCE Relationship-GLM3
+We can see that the majority of the variance is larger than the mean, which is a warning of overdispersion.
+```{r echo=FALSE}
+data_frame(muhat = predict(glm3,type="response"),            
+           varhat = ( all_data$month_sales_clean- muhat)^2) %>%   mutate_all(log) %>% 
+  ggplot(aes(x = muhat,y = varhat)) + 
+  theme_classic() + 
+  geom_point() + 
+  geom_abline(slope = 1,intercept = 0,colour = "red") +   
+        labs(title = "Mean-Variance Relationship",        
+       subtitle = "Poisson GLM, monthly sales data",        
+       x = "Predicted Mean",        
+       y = "Estimated Variance at Predicted Mean")
+```
+
+Overdispersion Test 
+
+Meanwhile, negative binomial regression is a generalization of Poisson regression because it weakens the Poisson Model's restrictive assumption that the variance is equal to the mean. This inequality (mean $\neq$ variance) is captured by estimating the dispersion parameter. In other words, Negative binomial/Quasipoisson regression is also for modelling count variables, and it can be used for over-dispersed (variance > mean) count data.
+
+To decide use which model (poisson vs negative binomial/quasipoisson), we will start from fitting basic poisson model (no interaction included) and test whether there exists the over-dispersion in our data. The null hypothesis for testing dispersion is equidispersion (i.e. c = 0). And the althernative hypothesis is overdispersed (i.e. c > 0). We use function dispersiontest() to test our hypothesis. From the following result, we clearly see that there is evidence of overdispersion (c is estimated to be 1493.728 and p-value<0.05) which strongly against the assumption of equidispersion. Thus, we will use the negative binomial regression in following analysis.  
+
+（This overdispersion test reports the significance of the overdispersion issue within the model.）
+```{r echo=FALSE, warning=FALSE}
+dispersiontest(glm3, trafo = 1, alternative = c('greater', 'two.sided', 'less'))
+```
+
+Calculate Overdispersion value
+Quantitatively, the dispersion parameter φ can be estimated using Pearson’s Chi-squared statistic and the degree of freedom.
+When φ is larger than 1, it is overdispersion. To manually calculate the parameter, we use the code below.
+Which gives us 1496.66 and confirms this simple Poisson model has the overdispersion problem.
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+n <- nrow(new_data) 
+p <- length(coef(glm3)) 
+phi <- data_frame(muhat = predict(glm3,type="response"),                   
+    varhat = (new_data$month_sales_clean- muhat)^2) %>% summarize(phi = sum(varhat/muhat) / (n - p)) %>% 
+  pull(phi) 
+phi
+
+# dp = sum(residuals(glm3,type ="pearson")^2)/glm3$df.residual
+# dp
+```
+
+
+GLM4-Quasi-Poisson Regression  
+The Quasi-Poisson Regression is a generalization of the Poisson regression and is used when modeling an overdispersed count variable.
+The Poisson model assumes that the variance is equal to the mean, which is not always a fair assumption. When the variance is greater than the mean, a Quasi-Poisson model, which assumes that the variance is a linear function of the mean, is more appropriate.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+glm4 = glm(month_sales_clean ~ score+comment_number+avg_price_rmb+delivery_time_clean+delivery_type_1+in_time_delivery_percent+min_price_rmb+shipping_fee_clean+Day_Time+Night_Time+Mid_Night_Time+recommend_Bin+district_population+Catering_Service+Car_Service+Leisure+Other+Medicare, data=new_data,family = quasipoisson(link=log))
+summary(glm4)
+knitr::kable(summary(glm4)$coef, digits=4)
+
+knitr::kable(VIF(glm4),digits=3) 
+
+plot(glm4)
+```
+
+Quasi vs Binomial   
+The variance of a quasi-Poisson model is a linear function of the mean while the variance of a negative binomial model is a quadratic function of the mean. These variance relationships affect the weights in the iteratively weighted least-squares algorithm of fitting models to data. Because the variance is a function of the mean, large and small counts get weighted differently in quasi-Poisson and negative binomial regression. 
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Yhat <- predict(glm4) 
+# Y<-log(new_data$month_sales_clean)
+# plot(Yhat,Y)
+# 
+# mse
+# mean(glm4$residuals^2)
+```
+
+
+
+GLM5-Negative Binomial GLM
+Replace Poisson with Negative Binomial
+One way to address the overdispersion in the model is to change our distributional assumption to the Negative binomial in which the variance is larger than the mean.
+
+去掉了district_population
+
+
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+new_data$delivery_type_1 <-relevel(as.factor(new_data$delivery_type_1),"MeituanFlash" )
+glm5 = glm.nb(month_sales_clean ~ score+comment_number+avg_price_rmb+delivery_time_clean+delivery_type_1+in_time_delivery_percent+min_price_rmb+shipping_fee_clean+Day_Time+Night_Time+Mid_Night_Time+recommend_Bin+district_population+Catering_Service+Car_Service+Leisure+Other+Medicare, data=new_data,link="log")
+summary(glm5)
+knitr::kable(summary(glm5)$coef, digits=4)
+```
+```{r eval=FALSE, include=FALSE}
+logtrans(month_sales_clean ~ score+comment_number+avg_price_rmb+delivery_time_clean+delivery_type_1+in_time_delivery_percent+min_price_rmb+shipping_fee_clean+Day_Time+Night_Time+Mid_Night_Time+recommend_Bin+Catering_Service+Car_Service+Leisure+Other+Medicare,
+         data = new_data,alpha = seq(0.8, 90, len=20))
+```
+
+
+```{r}
+glm5mat = cbind(coef(glm5))
+knitr::kable(summary(glm5)$coef, digits=3,cap="Estimated coefficients(log-odds)") 
+knitr::kable(exp(glm5mat),digits=3,cap="Sales Ratio")
+```
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+#new_data$delivery_type_1 <-relevel(as.factor(new_data$delivery_type_1),"MeituanFlash" )
+glm5 = glm.nb(month_sales_clean ~0+ score+comment_number+avg_price_rmb+delivery_time_clean+delivery_type_1+in_time_delivery_percent+min_price_rmb+shipping_fee_clean+Day_Time+Night_Time+Mid_Night_Time+recommend_Bin+district_population+Catering_Service+Car_Service+Leisure+Other+Medicare, data=new_data,link="log")
+summary(glm5)
+knitr::kable(summary(glm5)$coef, digits=3)
+```
+
+
+
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+new_data$delivery_type_1 <-relevel(as.factor(new_data$delivery_type_1),"MeituanRun" )
+glm6 = glm.nb(month_sales_clean ~ score+comment_number+avg_price_rmb+delivery_time_clean+delivery_type_1+in_time_delivery_percent+min_price_rmb+shipping_fee_clean+Day_Time+Night_Time+Mid_Night_Time+recommend_Bin+district_population+Catering_Service+Car_Service+Leisure+Other+Medicare, data=new_data,link="log")
+summary(glm6)
+knitr::kable(summary(glm6)$coef, digits=4)
+```
+
+
+
+
+
+
+
+
+
+
